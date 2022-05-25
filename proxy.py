@@ -7,8 +7,8 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from socketserver import ThreadingMixIn
 import threading
 
-certificate_file = '../carto.crt'
-private_key_file = '../carto.key'
+certificate_file = 'carto.crt'
+private_key_file = 'carto.key'
 
 def merge_two_dicts(x, y):
     #return x | y # python >= 3.9 required
