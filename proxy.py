@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 from http.server import BaseHTTPRequestHandler,HTTPServer
-import argparse, os, random, sys, requests
+import argparse, os, random, sys, ssl, requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 from socketserver import ThreadingMixIn
 import threading
 
-
-hostname = 'en.wikipedia.org'
+certificate_file = '../carto.crt'
+private_key_file = '../carto.key'
 
 def merge_two_dicts(x, y):
-    return x | y
+    #return x | y # python >= 3.9 required
+    return {**x, **y}
 
 def set_header():
     headers = {
         'Host': hostname
     }
-
     return headers
 
 class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -27,19 +29,20 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self, body=True):
         sent = False
         try:
-            url = 'https://{}{}'.format(hostname, self.path)
+            url = 'https://{}{}'.format(hostname, self.path).replace('light_all/','').replace('dark_all/','').replace('@2x','') # URL modification
             req_header = self.parse_headers()
 
-            print(req_header)
+            #print(req_header)
             print(url)
-            resp = requests.get(url, headers=merge_two_dicts(req_header, set_header()), verify=False)
+            resp = requests.get(url, headers=merge_two_dicts(req_header, set_header()), verify=False, stream=True)
             sent = True
 
             self.send_response(resp.status_code)
             self.send_resp_headers(resp)
             msg = resp.text
             if body:
-                self.wfile.write(msg.encode(encoding='UTF-8',errors='strict'))
+                #self.wfile.write(msg.encode(encoding='UTF-8',errors='strict')) # text
+                self.wfile.write(resp.content) # images
             return
         finally:
             if not sent:
@@ -75,10 +78,10 @@ class ProxyHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def send_resp_headers(self, resp):
         respheaders = resp.headers
-        print ('Response Header')
+        #print ('Response Header')
         for key in respheaders:
             if key not in ['Content-Encoding', 'Transfer-Encoding', 'content-encoding', 'transfer-encoding', 'content-length', 'Content-Length']:
-                print (key, respheaders[key])
+                #print (key, respheaders[key])
                 self.send_header(key, respheaders[key])
         self.send_header('Content-Length', len(resp.content))
         self.end_headers()
@@ -87,7 +90,7 @@ def parse_args(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser(description='Proxy HTTP requests')
     parser.add_argument('--port', dest='port', type=int, default=9999,
                         help='serve HTTP requests on specified port (default: random)')
-    parser.add_argument('--hostname', dest='hostname', type=str, default='en.wikipedia.org',
+    parser.add_argument('--hostname', dest='hostname', type=str, default='',
                         help='hostname to be processd (default: en.wikipedia.org)')
     args = parser.parse_args(argv)
     return args
@@ -99,10 +102,11 @@ def main(argv=sys.argv[1:]):
     global hostname
     args = parse_args(argv)
     hostname = args.hostname
-    print('http server is starting on {} port {}...'.format(args.hostname, args.port))
-    server_address = ('127.0.0.1', args.port)
+    print('https server is starting on {} port {}...'.format(args.hostname, args.port))
+    server_address = ('0.0.0.0', args.port)
     httpd = ThreadedHTTPServer(server_address, ProxyHTTPRequestHandler)
-    print('http server is running as reverse proxy')
+    httpd.socket = ssl.wrap_socket(httpd.socket, certfile=certificate_file, keyfile=private_key_file, server_side=True) # SSL
+    print('https server is running as reverse proxy')
     httpd.serve_forever()
 
 if __name__ == '__main__':
